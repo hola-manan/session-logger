@@ -1065,6 +1065,14 @@ function deleteTask(id){
   tasks=tasks.filter(function(t){return t.id!==id;});
   saveTasks();markStateUpdated();renderTasks();syncNow(true);
 }
+function archiveTask(id){
+  tasks.forEach(function(t){if(t.id===id)t.archived=true;});
+  saveTasks();markStateUpdated();renderTasks();syncNow(true);
+}
+function unarchiveTask(id){
+  tasks.forEach(function(t){if(t.id===id)t.archived=false;});
+  saveTasks();markStateUpdated();renderTasks();syncNow(true);
+}
 function shiftTaskDate(d){
   var dt=new Date(taskViewDate+'T12:00:00');
   dt.setDate(dt.getDate()+d);
@@ -1083,8 +1091,18 @@ function renderTasks(){
   }
   document.getElementById('task-date-label').textContent=dateLabel;
 
-  var habits=tasks.filter(function(t){return t.recurring;});
+  var isPast=taskViewDate<today;
+  var habits=tasks.filter(function(t){
+    if(!t.recurring) return false;
+    if(t.archived){
+      // archived habits only show on past dates where they have data
+      return isPast&&t.completedDates&&t.completedDates.indexOf(taskViewDate)!==-1;
+    }
+    return true;
+  });
   var oneTime=tasks.filter(function(t){return !t.recurring;});
+  var allActive=tasks.filter(function(t){return t.recurring&&!t.archived;});
+  var archivedHabits=tasks.filter(function(t){return t.recurring&&t.archived;});
   var el=document.getElementById('tasks-list');
   if(!tasks.length){el.innerHTML='<div class="empty">No tasks yet. Add one above!</div>';return;}
 
@@ -1099,10 +1117,13 @@ function renderTasks(){
       if(t.sub)mapStr+=' · '+t.sub;
       if(t.cat&&t.blocks)mapStr+=(mapStr?' · ':'')+fmtBlocks(t.blocks);
       var noteStr=t.notes?'<div class="task-map" style="font-style:italic">“'+t.notes+'”</div>':'';
+      var archBtn=t.archived?
+        '<button class="edit-btn" onclick="unarchiveTask('+t.id+')" title="Unarchive">▶</button>':
+        '<button class="edit-btn" onclick="archiveTask('+t.id+')" title="Archive (stop showing)">⏸</button>';
       return '<div class="task-item">'+
         '<div class="task-check'+(isDone?' done':'')+'" onclick="toggleTask('+t.id+')">'+(isDone?'✓':'')+'</div>'+
-        '<div class="task-info"><div class="task-title'+(isDone?' done':'')+'">'+t.title+'</div>'+(mapStr?'<div class="task-map">'+mapStr+'</div>':'')+noteStr+'</div>'+
-        '<div class="task-actions"><button class="edit-btn" onclick="editTask('+t.id+')" title="Edit">✎</button><button class="delete-btn" onclick="deleteTask('+t.id+')">✕</button></div></div>';
+        '<div class="task-info"><div class="task-title'+(isDone?' done':'')+'">'+t.title+(t.archived?' <span style="opacity:0.4;font-size:11px">(archived)</span>':'')+'</div>'+(mapStr?'<div class="task-map">'+mapStr+'</div>':'')+noteStr+'</div>'+
+        '<div class="task-actions">'+archBtn+'<button class="edit-btn" onclick="editTask('+t.id+')" title="Edit">✎</button><button class="delete-btn" onclick="deleteTask('+t.id+')">✕</button></div></div>';
     }).join('');
   }
   if(oneTime.length){
