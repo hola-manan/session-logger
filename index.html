@@ -57,9 +57,10 @@ input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--ui-
 .btn-sm:hover{background:#1b2a45;color:var(--ui-text)}
 .section-head{font-size:12px;font-weight:700;color:var(--ui-text-soft);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
 .badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:500}
-.badge-learning{background:rgba(143,123,255,0.2);color:#c8bcff}
-.badge-project{background:rgba(92,169,255,0.2);color:#b6dcff}
-.badge-fitness{background:rgba(51,217,178,0.2);color:#bdf7ea}
+.add-cat-row{display:flex;gap:8px;align-items:center;margin-top:14px;padding-top:14px;border-top:0.5px solid var(--ui-border)}
+.add-cat-row input{margin:0;flex:1}
+.cat-del{cursor:pointer;margin-left:auto;font-size:12px;color:var(--ui-text-soft);opacity:0.5;padding:4px 8px;border-radius:4px}
+.cat-del:hover{opacity:1;color:var(--ui-danger);background:rgba(255,109,141,0.12)}
 .session-item{border-bottom:0.5px solid var(--ui-border);padding:11px 0}
 .session-item:last-child{border-bottom:none}
 .history-day-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
@@ -123,6 +124,17 @@ input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--ui-
 .filter-section{margin-bottom:12px}
 .filter-label{font-size:12px;font-weight:600;color:var(--ui-text-soft);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
 
+/* ── Toast ── */
+.toast-overlay{position:fixed;inset:0;background:rgba(9,6,18,0.75);display:flex;align-items:center;justify-content:center;z-index:999;opacity:0;pointer-events:none;transition:opacity .25s ease;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.toast-overlay.show{opacity:1;pointer-events:auto}
+.toast-box{background:var(--ui-card);border:0.5px solid var(--ui-border-strong);border-radius:16px;padding:2rem 1.5rem;text-align:center;max-width:300px;width:85%;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:scale(0.9);transition:transform .25s cubic-bezier(.34,1.56,.64,1)}
+.toast-overlay.show .toast-box{transform:scale(1)}
+.toast-emoji{font-size:48px;margin-bottom:12px;display:block}
+.toast-msg{font-size:17px;font-weight:600;color:var(--ui-text);margin-bottom:6px}
+.toast-sub{font-size:13px;color:var(--ui-text-soft);margin-bottom:18px}
+.toast-dismiss{padding:10px 28px;border:none;border-radius:999px;background:linear-gradient(135deg,var(--ui-accent),var(--ui-accent-2));color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:var(--font-sans);touch-action:manipulation}
+.toast-dismiss:active{transform:scale(0.95)}
+
 /* ── Desktop (≥640px) ── */
 @media (min-width:640px){
   .app{padding:1.25rem 0.9rem 1.6rem;max-width:760px;margin:0 auto;border-radius:14px;min-height:auto}
@@ -142,6 +154,15 @@ input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--ui-
 </style>
 </head>
 <body>
+
+<div id="toast-overlay" class="toast-overlay" onclick="dismissToast()">
+  <div class="toast-box" onclick="event.stopPropagation()">
+    <span class="toast-emoji" id="toast-emoji">🎉</span>
+    <div class="toast-msg" id="toast-msg">Session logged!</div>
+    <div class="toast-sub" id="toast-sub">Keep up the great work.</div>
+    <button class="toast-dismiss" onclick="dismissToast()">Got it</button>
+  </div>
+</div>
 
 <div class="app">
 <h2 class="sr-only">Personal session logger — track learning, project, and fitness sessions</h2>
@@ -243,8 +264,12 @@ input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--ui-
 
 <div id="tab-manage" style="display:none">
   <div class="card">
-    <div class="section-head">Manage sub-lists</div>
+    <div class="section-head">Manage categories & sub-lists</div>
     <div id="manage-lists"></div>
+    <div class="add-cat-row">
+      <input type="text" id="new-cat-input" placeholder="New category name..." onkeydown="if(event.key==='Enter')addCategory()">
+      <button class="btn-sm" onclick="addCategory()">Add category</button>
+    </div>
   </div>
 </div>
 </div>
@@ -257,6 +282,13 @@ var blocks=1;
 var STATE_TS_KEY='sesh_state_ts';
 var stateUpdatedAt=0;
 var categoryOrder=['learning','project','fitness'];
+var categoryMeta={
+  learning:{label:'Learning',hue:255},
+  project:{label:'Side project',hue:215},
+  fitness:{label:'Fitness',hue:160}
+};
+var defaultHues=[30,340,280,120,55,195,0,310];
+var nextHueIdx=0;
 var FIREBASE_DB_URL='https://work-tracker-10960-default-rtdb.asia-southeast1.firebasedatabase.app';
 var FIREBASE_SYNC_ID='personal-main';
 
@@ -264,9 +296,14 @@ function load(){
   try{var s=localStorage.getItem('sesh_v2');if(s)sessions=JSON.parse(s);}catch(e){sessions=[];}
   try{var sl=localStorage.getItem('sesh_sub');if(sl)sublists=JSON.parse(sl);}catch(e){}
   try{var st=localStorage.getItem(STATE_TS_KEY);if(st)stateUpdatedAt=Number(st)||0;}catch(e){}
+  try{var co=localStorage.getItem('sesh_cats');if(co){var parsed=JSON.parse(co);if(Array.isArray(parsed))categoryOrder=parsed;}}catch(e){}
+  try{var cm=localStorage.getItem('sesh_catmeta');if(cm){var pm=JSON.parse(cm);if(pm&&typeof pm==='object'){for(var k in pm)categoryMeta[k]=pm[k];}}}catch(e){}
+  // ensure sublists keys exist for all categories
+  categoryOrder.forEach(function(c){if(!sublists[c])sublists[c]=[];});
 }
 function save(){try{localStorage.setItem('sesh_v2',JSON.stringify(sessions));}catch(e){}}
 function saveSub(){try{localStorage.setItem('sesh_sub',JSON.stringify(sublists));}catch(e){}}
+function saveCats(){try{localStorage.setItem('sesh_cats',JSON.stringify(categoryOrder));localStorage.setItem('sesh_catmeta',JSON.stringify(categoryMeta));}catch(e){}}
 function markStateUpdated(){stateUpdatedAt=Date.now();try{localStorage.setItem(STATE_TS_KEY,String(stateUpdatedAt));}catch(e){}}
 function makeFirebasePath(){
   var dbUrl=FIREBASE_DB_URL.trim().replace(/\/+$/,'');
@@ -281,8 +318,9 @@ function setSyncStatus(msg,isError){
 function pad(n){return String(n).padStart(2,'0');}
 function fmtClock(s){return pad(Math.floor(s/3600))+':'+pad(Math.floor((s%3600)/60))+':'+pad(s%60);}
 function fmtBlocks(b){var m=b*30;return m>=60?(m/60)+'h'+(m%60?(' '+m%60+'m'):''):m+'min';}
-function badgeClass(c){return c==='learning'?'badge-learning':c==='project'?'badge-project':'badge-fitness';}
-function badgeLabel(c){return c==='learning'?'Learning':c==='project'?'Side project':'Fitness';}
+function catHue(c){return categoryMeta[c]?categoryMeta[c].hue:200;}
+function badgeStyle(c){var h=catHue(c);return 'background:hsla('+h+',60%,65%,0.2);color:hsl('+h+',80%,82%)';}
+function badgeLabel(c){return categoryMeta[c]?categoryMeta[c].label:c;}
 
 function renderCategoryButtons(prefix){
   var catInput=document.getElementById(prefix+'-cat');
@@ -412,7 +450,7 @@ function saveTimerSession(){
   var sub=document.getElementById('t-sub').value;
   var b=Math.max(1,Math.round(timerElapsed/1800));
   sessions.unshift({id:Date.now(),cat:cat,sub:sub,notes:document.getElementById('t-notes').value.trim(),blocks:b,date:new Date().toISOString().slice(0,10),ts:Date.now()});
-  save();markStateUpdated();resetTimer();showTab('history');syncNow(true);
+  save();markStateUpdated();resetTimer();showToast();syncNow(true);
 }
 function discardTimer(){resetTimer();}
 function resetTimer(){
@@ -434,7 +472,7 @@ function saveManual(){
   save();markStateUpdated();
   document.getElementById('m-notes').value='';
   blocks=1;document.getElementById('block-val').textContent=1;document.getElementById('block-label').textContent='= 30 min';
-  showTab('history');syncNow(true);
+  showToast();syncNow(true);
 }
 function deleteSession(id){
   sessions=sessions.filter(function(s){return s.id!==id;});save();markStateUpdated();renderHistory();syncNow(true);
@@ -453,22 +491,21 @@ function renderHistory(){
     var totalBlocks=grouped[d].reduce(function(a,s){return a+(s.blocks||1);},0);
     var items=grouped[d].map(function(s){
       var sub=s.sub?(' · '+s.sub):'';
-      return '<div class="session-item"><div class="card-title" style="margin-bottom:0"><div><div class="s-meta"><span class="badge '+badgeClass(s.cat)+'">'+badgeLabel(s.cat)+'</span><span class="muted">'+sub+'</span><span>'+fmtBlocks(s.blocks||1)+'</span></div>'+(s.notes?'<div class="s-notes">'+s.notes+'</div>':'')+'</div><button class="delete-btn" onclick="deleteSession('+s.id+')">✕</button></div></div>';
+      return '<div class="session-item"><div class="card-title" style="margin-bottom:0"><div><div class="s-meta"><span class="badge" style="'+badgeStyle(s.cat)+'">'+badgeLabel(s.cat)+'</span><span class="muted">'+sub+'</span><span>'+fmtBlocks(s.blocks||1)+'</span></div>'+(s.notes?'<div class="s-notes">'+s.notes+'</div>':'')+'</div><button class="delete-btn" onclick="deleteSession('+s.id+')">✕</button></div></div>';
     }).join('');
     return '<div class="card"><div class="history-day-head"><span class="section-head" style="margin:0">'+pretty+'</span><span class="muted">'+fmtBlocks(totalBlocks)+' total</span></div>'+items+'</div>';
   }).join('');
 }
 
 function renderStats(){
-  var cats={learning:0,project:0,fitness:0};
-  var catB={learning:0,project:0,fitness:0};
+  var cats={};var catB={};
+  categoryOrder.forEach(function(c){cats[c]=0;catB[c]=0;});
   var totalBlocks=sessions.reduce(function(a,s){return a+(s.blocks||1);},0);
   sessions.forEach(function(s){if(cats[s.cat]!==undefined){cats[s.cat]++;catB[s.cat]+=(s.blocks||1);}});
   var bd=document.getElementById('cat-breakdown');
-  var rows=[{k:'learning',label:'Learning',cls:'badge-learning'},{k:'project',label:'Side project',cls:'badge-project'},{k:'fitness',label:'Fitness',cls:'badge-fitness'}];
-  bd.innerHTML=rows.map(function(r){
-    var pct=totalBlocks?Math.round(catB[r.k]/totalBlocks*100):0;
-    return '<div class="breakdown-row"><div class="breakdown-head"><span class="badge '+r.cls+'">'+r.label+'</span><span class="muted">'+cats[r.k]+' sessions · '+fmtBlocks(catB[r.k])+'</span></div><div class="progress-track"><div class="progress-fill" style="width:'+pct+'%"></div></div></div>';
+  bd.innerHTML=categoryOrder.map(function(k){
+    var pct=totalBlocks?Math.round(catB[k]/totalBlocks*100):0;
+    return '<div class="breakdown-row"><div class="breakdown-head"><span class="badge" style="'+badgeStyle(k)+'">'+badgeLabel(k)+'</span><span class="muted">'+cats[k]+' sessions · '+fmtBlocks(catB[k])+'</span></div><div class="progress-track"><div class="progress-fill" style="width:'+pct+'%"></div></div></div>';
   }).join('');
   renderGraph();
 }
@@ -689,15 +726,40 @@ function renderGraphChart(){
 }
 
 function renderManage(){
-  var cats=[{k:'learning',label:'Learning',cls:'badge-learning'},{k:'project',label:'Side project',cls:'badge-project'},{k:'fitness',label:'Fitness',cls:'badge-fitness'}];
   var el=document.getElementById('manage-lists');
-  el.innerHTML=cats.map(function(c){
-    var items=sublists[c.k]||[];
+  var isDefault={learning:1,project:1,fitness:1};
+  el.innerHTML=categoryOrder.map(function(k){
+    var items=sublists[k]||[];
     var tags=items.map(function(item,i){
-      return '<span class="sub-tag">'+item+'<span class="sub-tag-del" onclick="removeSub(\''+c.k+'\','+i+')">✕</span></span>';
+      return '<span class="sub-tag">'+item+'<span class="sub-tag-del" onclick="removeSub(\''+k+'\','+i+')">✕</span></span>';
     }).join('');
-    return '<div class="cat-section"><div class="cat-section-head"><span class="badge '+c.cls+'">'+c.label+'</span></div><div class="subtag-list">'+( tags||'<span class="muted">No sub-lists yet.</span>')+'</div><div class="manage-row"><input type="text" id="new-sub-'+c.k+'" placeholder="Add sub-list..." onkeydown="if(event.key===\'Enter\')addSub(\''+c.k+'\')"><button class="btn-sm" onclick="addSub(\''+c.k+'\')">Add</button></div></div>';
+    var delBtn=isDefault[k]?'':'<span class="cat-del" onclick="removeCategory(\''+k+'\')" title="Delete category">✕ Remove</span>';
+    return '<div class="cat-section"><div class="cat-section-head"><span class="badge" style="'+badgeStyle(k)+'">'+badgeLabel(k)+'</span>'+delBtn+'</div><div class="subtag-list">'+( tags||'<span class="muted">No sub-lists yet.</span>')+'</div><div class="manage-row"><input type="text" id="new-sub-'+k+'" placeholder="Add sub-list..." onkeydown="if(event.key===\'Enter\')addSub(\''+k+'\')"><button class="btn-sm" onclick="addSub(\''+k+'\')">Add</button></div></div>';
   }).join('');
+}
+function addCategory(){
+  var inp=document.getElementById('new-cat-input');
+  var label=inp.value.trim();
+  if(!label) return;
+  var key=label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  if(!key) return;
+  if(categoryOrder.indexOf(key)!==-1){inp.value='';return;}
+  var hue=defaultHues[nextHueIdx%defaultHues.length];nextHueIdx++;
+  categoryOrder.push(key);
+  categoryMeta[key]={label:label,hue:hue};
+  if(!sublists[key]) sublists[key]=[];
+  saveCats();saveSub();markStateUpdated();
+  inp.value='';
+  renderManage();renderCategoryButtons('m');renderCategoryButtons('t');
+  syncNow(true);
+}
+function removeCategory(key){
+  categoryOrder=categoryOrder.filter(function(c){return c!==key;});
+  delete categoryMeta[key];
+  delete sublists[key];
+  saveCats();saveSub();markStateUpdated();
+  renderManage();renderCategoryButtons('m');renderCategoryButtons('t');renderSubButtons('m');renderSubButtons('t');
+  syncNow(true);
 }
 function addSub(cat){
   var inp=document.getElementById('new-sub-'+cat);
@@ -728,19 +790,21 @@ function syncNow(silent){
       var shouldPull=remoteHasState&&(remoteTs>localTs||(localTs===0&&!hasLocalData));
       if(shouldPull){
         sessions=remote.sessions;
-        sublists={
-          learning:Array.isArray(remote.sublists.learning)?remote.sublists.learning:[],
-          project:Array.isArray(remote.sublists.project)?remote.sublists.project:[],
-          fitness:Array.isArray(remote.sublists.fitness)?remote.sublists.fitness:[]
-        };
+        if(remote.sublists&&typeof remote.sublists==='object'){
+          sublists={};
+          Object.keys(remote.sublists).forEach(function(k){sublists[k]=Array.isArray(remote.sublists[k])?remote.sublists[k]:[];});
+        }
+        if(Array.isArray(remote.categoryOrder))categoryOrder=remote.categoryOrder;
+        if(remote.categoryMeta&&typeof remote.categoryMeta==='object')categoryMeta=remote.categoryMeta;
+        categoryOrder.forEach(function(c){if(!sublists[c])sublists[c]=[];});
         stateUpdatedAt=remoteTs||localTs||0;
-        save();saveSub();try{localStorage.setItem(STATE_TS_KEY,String(stateUpdatedAt));}catch(e){}
+        save();saveSub();saveCats();try{localStorage.setItem(STATE_TS_KEY,String(stateUpdatedAt));}catch(e){}
         renderHistory();renderStats();renderManage();renderCategoryButtons('m');renderCategoryButtons('t');renderSubButtons('m');renderSubButtons('t');
         if(!silent)setSyncStatus('Synced: pulled newer data from cloud.');
         return;
       }
       var nextTs=localTs||Date.now();
-      var payload={sessions:sessions,sublists:sublists,updatedAt:nextTs};
+      var payload={sessions:sessions,sublists:sublists,categoryOrder:categoryOrder,categoryMeta:categoryMeta,updatedAt:nextTs};
       return fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(res2){
         if(!res2.ok) throw new Error('push failed');
         if(!localTs){
@@ -750,6 +814,27 @@ function syncNow(silent){
       });
     })
     .catch(function(err){if(window&&window.console&&console.warn)console.warn('Background sync skipped',err);});
+}
+
+var toastMessages=[
+  {emoji:'🎉',msg:'Session logged!',sub:'Keep up the great work.'},
+  {emoji:'🔥',msg:'Nice one!',sub:'You\'re on a roll.'},
+  {emoji:'💪',msg:'Locked in!',sub:'Another session in the books.'},
+  {emoji:'⚡',msg:'Boom!',sub:'That\'s how it\'s done.'},
+  {emoji:'🚀',msg:'Session saved!',sub:'You\'re building momentum.'},
+  {emoji:'✨',msg:'Crushed it!',sub:'Every session counts.'},
+  {emoji:'🏆',msg:'Well done!',sub:'Consistency is key.'},
+  {emoji:'🎯',msg:'Right on target!',sub:'Stay focused, stay sharp.'}
+];
+function showToast(){
+  var t=toastMessages[Math.floor(Math.random()*toastMessages.length)];
+  document.getElementById('toast-emoji').textContent=t.emoji;
+  document.getElementById('toast-msg').textContent=t.msg;
+  document.getElementById('toast-sub').textContent=t.sub;
+  document.getElementById('toast-overlay').classList.add('show');
+}
+function dismissToast(){
+  document.getElementById('toast-overlay').classList.remove('show');
 }
 
 load();buildDateOptions();renderCategoryButtons('m');renderCategoryButtons('t');renderSubButtons('m');renderSubButtons('t');
