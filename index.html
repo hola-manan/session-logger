@@ -81,6 +81,8 @@ input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--ui-
 .edit-btn{background:none;border:none;cursor:pointer;font-size:13px;color:var(--ui-text-soft);padding:6px 8px;border-radius:4px;touch-action:manipulation;min-width:36px;min-height:36px;display:flex;align-items:center;justify-content:center}
 .edit-btn:hover{color:var(--ui-accent);background:rgba(138,99,255,0.12)}
 .task-form-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.btn-task-save{width:100%;padding:14px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--ui-accent),var(--ui-accent-2));color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:var(--font-sans);margin-top:6px;touch-action:manipulation;transition:transform .1s ease}
+.btn-task-save:active{transform:scale(0.98)}
 .task-section-label{font-size:12px;font-weight:700;color:var(--ui-text-soft);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px;display:flex;align-items:center;gap:8px}
 .task-section-label:first-child{margin-top:0}
 .task-section-count{font-weight:400;opacity:0.6}
@@ -312,10 +314,7 @@ input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--ui-
       <span class="section-head" style="margin:0" id="task-form-title">Add task</span>
       <button class="btn-sm" id="task-cancel-btn" onclick="cancelEditTask()" style="display:none">Cancel</button>
     </div>
-    <div class="add-task-row">
-      <input type="text" id="new-task-input" placeholder="Task name..." onkeydown="if(event.key==='Enter')addTask()">
-      <button class="btn-sm" id="task-save-btn" onclick="addTask()">Add</button>
-    </div>
+    <input type="text" id="new-task-input" placeholder="Task name (optional)..." onkeydown="if(event.key==='Enter')addTask()" style="margin-bottom:12px">
     <div class="task-toggle-row">
       <button class="toggle-pill active" id="task-type-recurring" onclick="setNewTaskType(true)">Habit (recurring)</button>
       <button class="toggle-pill" id="task-type-once" onclick="setNewTaskType(false)">One-time</button>
@@ -340,7 +339,8 @@ input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--ui-
       </div>
     </div>
     <label>Notes <span style="font-weight:400;opacity:0.6">(optional)</span></label>
-    <textarea id="tk-notes" placeholder="Task details or notes..." style="min-height:60px"></textarea>
+    <textarea id="tk-notes" placeholder="Task details or notes..." style="min-height:60px;margin-bottom:10px"></textarea>
+    <button class="btn-task-save" id="task-save-btn" onclick="addTask()">Add task</button>
   </div>
   <div class="card">
     <div class="card-title" style="margin-bottom:6px">
@@ -976,11 +976,13 @@ function changeTaskBlocks(d){
   document.getElementById('tk-block-label').textContent='= '+fmtBlocks(taskBlocks);
 }
 function addTask(){
-  var inp=document.getElementById('new-task-input');
-  var title=inp.value.trim();
-  if(!title) return;
   var cat=document.getElementById('tk-cat').value;
   var sub=document.getElementById('tk-sub').value;
+  var title=document.getElementById('new-task-input').value.trim();
+  if(!title){
+    if(cat) title=badgeLabel(cat)+(sub?' · '+sub:'')+' task';
+    else title='Task';
+  }
   var bl=cat?taskBlocks:0;
   var notes=document.getElementById('tk-notes').value.trim();
   if(editingTaskId){
@@ -991,13 +993,14 @@ function addTask(){
     });
     editingTaskId=null;
     document.getElementById('task-form-title').textContent='Add task';
-    document.getElementById('task-save-btn').textContent='Add';
+    document.getElementById('task-save-btn').textContent='Add task';
     document.getElementById('task-cancel-btn').style.display='none';
   } else {
     tasks.push({id:Date.now(),title:title,recurring:newTaskRecurring,cat:cat,sub:sub,blocks:bl,notes:notes,completedDates:[],completed:false});
   }
   saveTasks();markStateUpdated();
-  inp.value='';document.getElementById('tk-notes').value='';
+  document.getElementById('new-task-input').value='';
+  document.getElementById('tk-notes').value='';
   taskBlocks=1;document.getElementById('tk-block-val').textContent=1;document.getElementById('tk-block-label').textContent='= 30 min';
   renderTasks();syncNow(true);
 }
@@ -1032,7 +1035,7 @@ function cancelEditTask(){
   taskBlocks=1;document.getElementById('tk-block-val').textContent=1;document.getElementById('tk-block-label').textContent='= 30 min';
   setNewTaskType(true);
   document.getElementById('task-form-title').textContent='Add task';
-  document.getElementById('task-save-btn').textContent='Add';
+  document.getElementById('task-save-btn').textContent='Add task';
   document.getElementById('task-cancel-btn').style.display='none';
   renderTaskCatButtons();renderTaskSubButtons();
 }
