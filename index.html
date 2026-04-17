@@ -34,10 +34,13 @@ html,body{
 }
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
 .app{padding:0.4rem 0.4rem 2rem;max-width:none;width:100%;margin:0;font-family:var(--font-sans);background:var(--ui-bg);color:var(--ui-text);border-radius:0;min-height:100vh;min-height:100dvh}
-.tabs{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:0.9rem;padding:6px;background:var(--ui-bg-soft);border:0.5px solid var(--ui-border);border-radius:var(--border-radius-lg)}
-.tab{flex:0 0 auto;min-width:0;padding:11px 6px;background:transparent;border:0.5px solid transparent;border-radius:var(--border-radius-md);font-size:13px;font-weight:600;cursor:pointer;color:var(--ui-text-soft);font-family:var(--font-sans);transition:all .15s ease;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tab.active{background:var(--ui-card);color:var(--ui-text);border-color:var(--ui-border-strong);font-weight:600;box-shadow:0 2px 10px rgba(15,20,35,0.45)}
+.tabs{display:flex;gap:5px;margin-bottom:0.9rem;padding:6px;background:var(--ui-bg-soft);border:0.5px solid var(--ui-border);border-radius:var(--border-radius-lg);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:1 0 auto;white-space:nowrap;padding:11px 12px;background:transparent;border:0.5px solid transparent;border-radius:var(--border-radius-md);font-size:13px;font-weight:600;cursor:pointer;color:var(--ui-text-soft);font-family:var(--font-sans);transition:all .15s ease}
 .tab:hover{color:var(--ui-text)}
+.tab-primary.active{background:linear-gradient(135deg,var(--ui-accent),var(--ui-accent-2));color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(138,99,255,0.3)}
+.tab-secondary.active{background:var(--ui-card);color:var(--ui-accent);border-color:var(--ui-accent);box-shadow:0 0 10px rgba(138,99,255,0.15)}
+.tab-tertiary.active{background:var(--ui-card);color:var(--ui-text);border-color:var(--ui-border-strong);box-shadow:0 2px 10px rgba(15,20,35,0.45)}
 .card{background:var(--ui-card);border:0.5px solid var(--ui-border);border-radius:12px;padding:0.9rem 0.75rem;margin-bottom:10px;box-shadow:0 6px 16px rgba(4,8,16,0.35)}
 .card-title{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
 .muted{font-size:13px;color:var(--ui-text-soft)}
@@ -196,11 +199,11 @@ input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--ui-
 <div class="app">
 <h2 class="sr-only">Personal session logger — track learning, project, and fitness sessions</h2>
 <div class="tabs">
-  <button class="tab active" onclick="showTab('log')">Log</button>
-  <button class="tab" onclick="showTab('history')">History</button>
-  <button class="tab" onclick="showTab('tasks')">Tasks</button>
-  <button class="tab" onclick="showTab('stats')">Stats</button>
-  <button class="tab" onclick="showTab('manage')">Lists</button>
+  <button class="tab tab-primary active" onclick="showTab('log')">Log</button>
+  <button class="tab tab-secondary" onclick="showTab('tasks')">Tasks</button>
+  <button class="tab tab-tertiary" onclick="showTab('stats')">Stats</button>
+  <button class="tab tab-tertiary" onclick="showTab('manage')">Lists</button>
+  <button class="tab tab-tertiary" onclick="showTab('history')">History</button>
 </div>
 
 <div id="tab-log">
@@ -479,11 +482,11 @@ function buildDateOptions(){
 }
 
 function showTab(t){
-  ['log','history','tasks','stats','manage'].forEach(function(id){
+  ['log','tasks','stats','manage','history'].forEach(function(id){
     document.getElementById('tab-'+id).style.display=id===t?'':'none';
   });
   document.querySelectorAll('.tab').forEach(function(el,i){
-    el.classList.toggle('active',['log','history','tasks','stats','manage'][i]===t);
+    el.classList.toggle('active',['log','tasks','stats','manage','history'][i]===t);
   });
   if(t==='history') renderHistory();
   if(t==='tasks') renderTasks();
