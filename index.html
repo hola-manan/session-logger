@@ -321,6 +321,17 @@ input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--ui-
       <input type="hidden" id="tk-sub" value="">
       <div id="tk-sub-buttons" class="choice-row"></div>
     </div>
+    <div class="filter-section" id="tk-blocks-wrap" style="display:none">
+      <div class="filter-label">Sessions to log on completion <span style="font-weight:400;opacity:0.6">(1 block = 30 min)</span></div>
+      <div class="block-picker">
+        <button onclick="changeTaskBlocks(-1)">-</button>
+        <span class="block-val" id="tk-block-val">1</span>
+        <button onclick="changeTaskBlocks(1)">+</button>
+        <span class="block-label" id="tk-block-label">= 30 min</span>
+      </div>
+    </div>
+    <label>Notes <span style="font-weight:400;opacity:0.6">(optional)</span></label>
+    <textarea id="tk-notes" placeholder="Task details or notes..." style="min-height:60px"></textarea>
   </div>
   <div class="card">
     <div class="card-title" style="margin-bottom:6px">
@@ -382,7 +393,7 @@ function setSyncStatus(msg,isError){
 
 function pad(n){return String(n).padStart(2,'0');}
 function fmtClock(s){return pad(Math.floor(s/3600))+':'+pad(Math.floor((s%3600)/60))+':'+pad(s%60);}
-function fmtBlocks(b){var m=b*30;return m>=60?(m/60)+'h'+(m%60?(' '+m%60+'m'):''):m+'min';}
+function fmtBlocks(b){var m=b*30;return m>=60?Math.floor(m/60)+'h'+(m%60?(' '+m%60+'m'):''):m+'min';}
 function catHue(c){return categoryMeta[c]?categoryMeta[c].hue:200;}
 function badgeStyle(c){var h=catHue(c);return 'background:hsla('+h+',60%,65%,0.2);color:hsl('+h+',80%,82%)';}
 function badgeLabel(c){return categoryMeta[c]?categoryMeta[c].label:c;}
@@ -926,6 +937,7 @@ function renderTaskCatButtons(){
 function setTaskCat(cat){
   document.getElementById('tk-cat').value=cat;
   document.getElementById('tk-sub').value='';
+  document.getElementById('tk-blocks-wrap').style.display=cat?'':'none';
   renderTaskCatButtons();
   renderTaskSubButtons();
 }
@@ -947,14 +959,24 @@ function setTaskSub(val){
   document.getElementById('tk-sub').value=val;
   renderTaskSubButtons();
 }
+var taskBlocks=1;
+function changeTaskBlocks(d){
+  taskBlocks=Math.max(1,Math.min(16,taskBlocks+d));
+  document.getElementById('tk-block-val').textContent=taskBlocks;
+  document.getElementById('tk-block-label').textContent='= '+fmtBlocks(taskBlocks);
+}
 function addTask(){
   var inp=document.getElementById('new-task-input');
   var title=inp.value.trim();
   if(!title) return;
   var cat=document.getElementById('tk-cat').value;
   var sub=document.getElementById('tk-sub').value;
-  tasks.push({id:Date.now(),title:title,recurring:newTaskRecurring,cat:cat,sub:sub,completedDates:[],completed:false});
-  saveTasks();markStateUpdated();inp.value='';
+  var bl=cat?taskBlocks:0;
+  var notes=document.getElementById('tk-notes').value.trim();
+  tasks.push({id:Date.now(),title:title,recurring:newTaskRecurring,cat:cat,sub:sub,blocks:bl,notes:notes,completedDates:[],completed:false});
+  saveTasks();markStateUpdated();
+  inp.value='';document.getElementById('tk-notes').value='';
+  taskBlocks=1;document.getElementById('tk-block-val').textContent=1;document.getElementById('tk-block-label').textContent='= 30 min';
   renderTasks();syncNow(true);
 }
 function toggleTask(id){
@@ -964,9 +986,21 @@ function toggleTask(id){
       if(t.recurring){
         if(!t.completedDates)t.completedDates=[];
         var idx=t.completedDates.indexOf(today);
-        if(idx===-1)t.completedDates.push(today);else t.completedDates.splice(idx,1);
+        if(idx===-1){
+          t.completedDates.push(today);
+          if(t.cat&&t.blocks){
+            sessions.unshift({id:Date.now(),cat:t.cat,sub:t.sub||'',notes:t.notes||t.title,blocks:t.blocks,date:today,ts:Date.now()});
+            save();
+          }
+        } else {
+          t.completedDates.splice(idx,1);
+        }
       } else {
         t.completed=!t.completed;
+        if(t.completed&&t.cat&&t.blocks){
+          sessions.unshift({id:Date.now(),cat:t.cat,sub:t.sub||'',notes:t.notes||t.title,blocks:t.blocks,date:today,ts:Date.now()});
+          save();
+        }
       }
     }
   });
@@ -1008,9 +1042,11 @@ function renderTasks(){
       var mapStr='';
       if(t.cat)mapStr+=badgeLabel(t.cat);
       if(t.sub)mapStr+=' · '+t.sub;
+      if(t.cat&&t.blocks)mapStr+=(mapStr?' · ':'')+fmtBlocks(t.blocks);
+      var noteStr=t.notes?'<div class="task-map" style="font-style:italic">“'+t.notes+'”</div>':'';
       return '<div class="task-item">'+
         '<div class="task-check'+(isDone?' done':'')+'" onclick="toggleTask('+t.id+')">'+(isDone?'✓':'')+'</div>'+
-        '<div class="task-info"><div class="task-title'+(isDone?' done':'')+'">'+t.title+'</div>'+(mapStr?'<div class="task-map">'+mapStr+'</div>':'')+'</div>'+
+        '<div class="task-info"><div class="task-title'+(isDone?' done':'')+'">'+t.title+'</div>'+(mapStr?'<div class="task-map">'+mapStr+'</div>':'')+noteStr+'</div>'+
         '<div class="task-actions"><button class="delete-btn" onclick="deleteTask('+t.id+')">✕</button></div></div>';
     }).join('');
   }
@@ -1023,9 +1059,11 @@ function renderTasks(){
         var mapStr='';
         if(t.cat)mapStr+=badgeLabel(t.cat);
         if(t.sub)mapStr+=' · '+t.sub;
+        if(t.cat&&t.blocks)mapStr+=(mapStr?' · ':'')+fmtBlocks(t.blocks);
+        var noteStr=t.notes?'<div class="task-map" style="font-style:italic">“'+t.notes+'”</div>':'';
         return '<div class="task-item">'+
           '<div class="task-check" onclick="toggleTask('+t.id+')"></div>'+
-          '<div class="task-info"><div class="task-title">'+t.title+'</div>'+(mapStr?'<div class="task-map">'+mapStr+'</div>':'')+'</div>'+
+          '<div class="task-info"><div class="task-title">'+t.title+'</div>'+(mapStr?'<div class="task-map">'+mapStr+'</div>':'')+noteStr+'</div>'+
           '<div class="task-actions"><button class="delete-btn" onclick="deleteTask('+t.id+')">✕</button></div></div>';
       }).join('');
     }
@@ -1035,9 +1073,11 @@ function renderTasks(){
         var mapStr='';
         if(t.cat)mapStr+=badgeLabel(t.cat);
         if(t.sub)mapStr+=' · '+t.sub;
+        if(t.cat&&t.blocks)mapStr+=(mapStr?' · ':'')+fmtBlocks(t.blocks);
+        var noteStr=t.notes?'<div class="task-map" style="font-style:italic">“'+t.notes+'”</div>':'';
         return '<div class="task-item">'+
           '<div class="task-check done" onclick="toggleTask('+t.id+')">✓</div>'+
-          '<div class="task-info"><div class="task-title done">'+t.title+'</div>'+(mapStr?'<div class="task-map">'+mapStr+'</div>':'')+'</div>'+
+          '<div class="task-info"><div class="task-title done">'+t.title+'</div>'+(mapStr?'<div class="task-map">'+mapStr+'</div>':'')+noteStr+'</div>'+
           '<div class="task-actions"><button class="delete-btn" onclick="deleteTask('+t.id+')">✕</button></div></div>';
       }).join('');
     }
