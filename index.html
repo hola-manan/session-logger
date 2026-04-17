@@ -74,7 +74,10 @@ input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--ui-
 .task-type-tag{font-size:11px;padding:1px 8px;border-radius:10px;font-weight:600}
 .task-type-habit{background:rgba(51,217,178,0.15);color:#7ef0d0}
 .task-type-once{background:rgba(92,169,255,0.15);color:#a5cfff}
-.task-actions{display:flex;gap:4px;align-items:center;flex-shrink:0}
+.task-actions{display:flex;gap:2px;align-items:center;flex-shrink:0}
+.edit-btn{background:none;border:none;cursor:pointer;font-size:13px;color:var(--ui-text-soft);padding:6px 8px;border-radius:4px;touch-action:manipulation;min-width:36px;min-height:36px;display:flex;align-items:center;justify-content:center}
+.edit-btn:hover{color:var(--ui-accent);background:rgba(138,99,255,0.12)}
+.task-form-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .task-section-label{font-size:12px;font-weight:700;color:var(--ui-text-soft);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px;display:flex;align-items:center;gap:8px}
 .task-section-label:first-child{margin-top:0}
 .task-section-count{font-weight:400;opacity:0.6}
@@ -302,10 +305,13 @@ input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--ui-
 
 <div id="tab-tasks" style="display:none">
   <div class="card">
-    <div class="section-head">Add task</div>
+    <div class="task-form-head">
+      <span class="section-head" style="margin:0" id="task-form-title">Add task</span>
+      <button class="btn-sm" id="task-cancel-btn" onclick="cancelEditTask()" style="display:none">Cancel</button>
+    </div>
     <div class="add-task-row">
       <input type="text" id="new-task-input" placeholder="Task name..." onkeydown="if(event.key==='Enter')addTask()">
-      <button class="btn-sm" onclick="addTask()">Add</button>
+      <button class="btn-sm" id="task-save-btn" onclick="addTask()">Add</button>
     </div>
     <div class="task-toggle-row">
       <button class="toggle-pill active" id="task-type-recurring" onclick="setNewTaskType(true)">Habit (recurring)</button>
@@ -918,6 +924,7 @@ function dismissToast(){
 /* ── Tasks logic ── */
 var newTaskRecurring=true;
 var taskViewDate=new Date().toISOString().slice(0,10);
+var editingTaskId=null;
 
 function setNewTaskType(recurring){
   newTaskRecurring=recurring;
@@ -973,11 +980,58 @@ function addTask(){
   var sub=document.getElementById('tk-sub').value;
   var bl=cat?taskBlocks:0;
   var notes=document.getElementById('tk-notes').value.trim();
-  tasks.push({id:Date.now(),title:title,recurring:newTaskRecurring,cat:cat,sub:sub,blocks:bl,notes:notes,completedDates:[],completed:false});
+  if(editingTaskId){
+    tasks.forEach(function(t){
+      if(t.id===editingTaskId){
+        t.title=title;t.recurring=newTaskRecurring;t.cat=cat;t.sub=sub;t.blocks=bl;t.notes=notes;
+      }
+    });
+    editingTaskId=null;
+    document.getElementById('task-form-title').textContent='Add task';
+    document.getElementById('task-save-btn').textContent='Add';
+    document.getElementById('task-cancel-btn').style.display='none';
+  } else {
+    tasks.push({id:Date.now(),title:title,recurring:newTaskRecurring,cat:cat,sub:sub,blocks:bl,notes:notes,completedDates:[],completed:false});
+  }
   saveTasks();markStateUpdated();
   inp.value='';document.getElementById('tk-notes').value='';
   taskBlocks=1;document.getElementById('tk-block-val').textContent=1;document.getElementById('tk-block-label').textContent='= 30 min';
   renderTasks();syncNow(true);
+}
+function editTask(id){
+  var task=tasks.find(function(t){return t.id===id;});
+  if(!task)return;
+  editingTaskId=id;
+  document.getElementById('new-task-input').value=task.title;
+  document.getElementById('tk-notes').value=task.notes||'';
+  setNewTaskType(task.recurring);
+  document.getElementById('tk-cat').value=task.cat||'';
+  document.getElementById('tk-blocks-wrap').style.display=task.cat?'':'none';
+  renderTaskCatButtons();
+  renderTaskSubButtons();
+  if(task.sub){
+    document.getElementById('tk-sub').value=task.sub;
+    renderTaskSubButtons();
+  }
+  if(task.blocks){taskBlocks=task.blocks;document.getElementById('tk-block-val').textContent=taskBlocks;document.getElementById('tk-block-label').textContent='= '+fmtBlocks(taskBlocks);}
+  document.getElementById('task-form-title').textContent='Edit task';
+  document.getElementById('task-save-btn').textContent='Save';
+  document.getElementById('task-cancel-btn').style.display='';
+  document.getElementById('new-task-input').focus();
+  document.getElementById('new-task-input').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function cancelEditTask(){
+  editingTaskId=null;
+  document.getElementById('new-task-input').value='';
+  document.getElementById('tk-notes').value='';
+  document.getElementById('tk-cat').value='';document.getElementById('tk-sub').value='';
+  document.getElementById('tk-blocks-wrap').style.display='none';
+  taskBlocks=1;document.getElementById('tk-block-val').textContent=1;document.getElementById('tk-block-label').textContent='= 30 min';
+  setNewTaskType(true);
+  document.getElementById('task-form-title').textContent='Add task';
+  document.getElementById('task-save-btn').textContent='Add';
+  document.getElementById('task-cancel-btn').style.display='none';
+  renderTaskCatButtons();renderTaskSubButtons();
 }
 function toggleTask(id){
   var today=taskViewDate;
@@ -997,6 +1051,7 @@ function toggleTask(id){
         }
       } else {
         t.completed=!t.completed;
+        t.completedAt=t.completed?Date.now():0;
         if(t.completed&&t.cat&&t.blocks){
           sessions.unshift({id:Date.now(),cat:t.cat,sub:t.sub||'',notes:t.notes||t.title,blocks:t.blocks,date:today,ts:Date.now()});
           save();
@@ -1047,7 +1102,7 @@ function renderTasks(){
       return '<div class="task-item">'+
         '<div class="task-check'+(isDone?' done':'')+'" onclick="toggleTask('+t.id+')">'+(isDone?'✓':'')+'</div>'+
         '<div class="task-info"><div class="task-title'+(isDone?' done':'')+'">'+t.title+'</div>'+(mapStr?'<div class="task-map">'+mapStr+'</div>':'')+noteStr+'</div>'+
-        '<div class="task-actions"><button class="delete-btn" onclick="deleteTask('+t.id+')">✕</button></div></div>';
+        '<div class="task-actions"><button class="edit-btn" onclick="editTask('+t.id+')" title="Edit">✎</button><button class="delete-btn" onclick="deleteTask('+t.id+')">✕</button></div></div>';
     }).join('');
   }
   if(oneTime.length){
@@ -1064,7 +1119,7 @@ function renderTasks(){
         return '<div class="task-item">'+
           '<div class="task-check" onclick="toggleTask('+t.id+')"></div>'+
           '<div class="task-info"><div class="task-title">'+t.title+'</div>'+(mapStr?'<div class="task-map">'+mapStr+'</div>':'')+noteStr+'</div>'+
-          '<div class="task-actions"><button class="delete-btn" onclick="deleteTask('+t.id+')">✕</button></div></div>';
+          '<div class="task-actions"><button class="edit-btn" onclick="editTask('+t.id+')" title="Edit">✎</button><button class="delete-btn" onclick="deleteTask('+t.id+')">✕</button></div></div>';
       }).join('');
     }
     if(doneOT.length){
@@ -1078,7 +1133,7 @@ function renderTasks(){
         return '<div class="task-item">'+
           '<div class="task-check done" onclick="toggleTask('+t.id+')">✓</div>'+
           '<div class="task-info"><div class="task-title done">'+t.title+'</div>'+(mapStr?'<div class="task-map">'+mapStr+'</div>':'')+noteStr+'</div>'+
-          '<div class="task-actions"><button class="delete-btn" onclick="deleteTask('+t.id+')">✕</button></div></div>';
+          '<div class="task-actions"><button class="edit-btn" onclick="editTask('+t.id+')" title="Edit">✎</button><button class="delete-btn" onclick="deleteTask('+t.id+')">✕</button></div></div>';
       }).join('');
     }
   }
@@ -1086,7 +1141,17 @@ function renderTasks(){
   renderTaskCatButtons();renderTaskSubButtons();
 }
 
-load();buildDateOptions();renderCategoryButtons('m');renderCategoryButtons('t');renderSubButtons('m');renderSubButtons('t');
+function cleanupTasks(){
+  var weekAgo=Date.now()-7*24*60*60*1000;
+  var before=tasks.length;
+  tasks=tasks.filter(function(t){
+    if(!t.recurring&&t.completed&&t.completedAt&&t.completedAt<weekAgo)return false;
+    return true;
+  });
+  if(tasks.length<before){saveTasks();markStateUpdated();}
+}
+
+load();cleanupTasks();buildDateOptions();renderCategoryButtons('m');renderCategoryButtons('t');renderSubButtons('m');renderSubButtons('t');
 renderHistoryFilterButtons();renderTaskCatButtons();renderTaskSubButtons();
 syncNow(true);
 setInterval(function(){syncNow(true);},15000);
