@@ -1562,6 +1562,50 @@
             sessions = sessions.filter(function (s) { return s.id !== id; }); save(); markStateUpdated(); renderHistory(); syncNow(true);
         }
 
+        window.toggleNotes = function(el) {
+            var isExpanded = el.getAttribute('data-expanded') === 'true';
+            var full = decodeURIComponent(el.getAttribute('data-full'));
+            var short = decodeURIComponent(el.getAttribute('data-short'));
+            if (isExpanded) {
+                el.innerHTML = '“' + short + '” <a href="#" onclick="event.preventDefault(); window.toggleNotes(this.parentElement); event.stopPropagation();" style="color:var(--ui-accent);text-decoration:none;white-space:nowrap;">read more</a>';
+                el.setAttribute('data-expanded', 'false');
+            } else {
+                el.innerHTML = '“' + full + '” <a href="#" onclick="event.preventDefault(); window.toggleNotes(this.parentElement); event.stopPropagation();" style="color:var(--ui-accent);text-decoration:none;white-space:nowrap;">show less</a>';
+                el.setAttribute('data-expanded', 'true');
+            }
+        };
+
+        function formatNotesSnippet(notesText, customClass) {
+            if (!notesText) return '';
+            var div = document.createElement('div');
+            div.textContent = notesText;
+            var escapedNotes = div.innerHTML.replace(/\n/g, '<br>');
+            var cls = customClass || 's-notes';
+            
+            if (notesText.length <= 60) {
+                return '<div class="' + cls + '" style="margin-top:4px;font-style:italic;word-break:break-word;">“' + escapedNotes + '”</div>';
+            }
+            
+            var shortText = notesText.substring(0, 60).trim() + '...';
+            div.textContent = shortText;
+            var escapedShort = div.innerHTML;
+            
+            var safeFull = encodeURIComponent(escapedNotes);
+            var safeShort = encodeURIComponent(escapedShort);
+            
+            var spanHtml = '<span data-expanded="false" data-full="' + safeFull + '" data-short="' + safeShort + '">“' + escapedShort + '” <a href="#" onclick="event.preventDefault(); window.toggleNotes(this.parentElement); event.stopPropagation();" style="color:var(--ui-accent);text-decoration:none;white-space:nowrap;">read more</a></span>';
+            
+            return '<div class="' + cls + '" style="margin-top:4px;font-style:italic;word-break:break-word;">' + spanHtml + '</div>';
+        }
+
+        function downloadNotesText(title, notesText) {
+            var el = document.createElement('a');
+            var file = new Blob([notesText], {type: 'text/plain'});
+            el.href = URL.createObjectURL(file);
+            el.download = (title || 'notes').replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.txt';
+            el.click();
+        }
+
         function renderHistory() {
             var cat = document.getElementById('filter-cat').value;
             var list = sessions.filter(function (s) { return !cat || s.cat === cat; });
@@ -1575,7 +1619,11 @@
                 var totalBlocks = grouped[d].reduce(function (a, s) { return a + (s.blocks || 1); }, 0);
                 var items = grouped[d].map(function (s) {
                     var sub = s.sub ? (' · ' + s.sub) : '';
-                    return '<div class="session-item"><div class="card-title" style="margin-bottom:0"><div><div class="s-meta"><span class="badge" style="' + badgeStyle(s.cat) + '">' + badgeLabel(s.cat) + '</span><span class="muted">' + sub + '</span><span>' + fmtBlocks(s.blocks || 1) + '</span></div>' + (s.notes ? '<div class="s-notes">' + s.notes + '</div>' : '') + '</div><button class="delete-btn" onclick="deleteSession(' + s.id + ')">✕</button></div></div>';
+                    var noteStr = formatNotesSnippet(s.notes, 's-notes');
+                    var safeTitle = encodeURIComponent('session_' + (s.cat||''));
+                    var safeNotes = encodeURIComponent(s.notes || '');
+                    var dlBtn = s.notes ? '<button class="edit-btn" title="Download Notes" onclick="downloadNotesText(decodeURIComponent(\'' + safeTitle + '\'), decodeURIComponent(\'' + safeNotes + '\')); event.stopPropagation();">⬇</button>' : '';
+                    return '<div class="session-item"><div class="card-title" style="margin-bottom:0;align-items:flex-start;"><div><div class="s-meta"><span class="badge" style="' + badgeStyle(s.cat) + '">' + badgeLabel(s.cat) + '</span><span class="muted">' + sub + '</span><span>' + fmtBlocks(s.blocks || 1) + '</span></div>' + noteStr + '</div><div style="display:flex;gap:2px;align-items:center">' + dlBtn + '<button class="delete-btn" onclick="deleteSession(' + s.id + ')">✕</button></div></div></div>';
                 }).join('');
                 return '<div class="card"><div class="history-day-head"><span class="section-head" style="margin:0">' + pretty + '</span><span class="muted">' + fmtBlocks(totalBlocks) + ' total</span></div>' + items + '</div>';
             }).join('');
@@ -2163,14 +2211,17 @@
                     if (t.cat) mapStr += badgeLabel(t.cat);
                     if (t.sub) mapStr += ' · ' + t.sub;
                     if (t.cat && t.blocks) mapStr += (mapStr ? ' · ' : '') + fmtBlocks(t.blocks);
-                    var noteStr = t.notes ? '<div class="task-map" style="font-style:italic">“' + t.notes + '”</div>' : '';
+                    var noteStr = formatNotesSnippet(t.notes, 'task-map');
+                    var safeTitle = encodeURIComponent(t.title || 'task');
+                    var safeNotes = encodeURIComponent(t.notes || '');
+                    var dlBtn = (t.notes && isDone) ? '<button class="edit-btn" title="Download Notes" onclick="downloadNotesText(decodeURIComponent(\'' + safeTitle + '\'), decodeURIComponent(\'' + safeNotes + '\')); event.stopPropagation();">⬇</button>' : '';
                     var archBtn = t.archived ?
                         '<button class="edit-btn" onclick="unarchiveTask(' + t.id + ')" title="Unarchive">▶</button>' :
                         '<button class="edit-btn" onclick="archiveTask(' + t.id + ')" title="Archive (stop showing)">⏸</button>';
                     return '<div class="task-item">' +
                         '<div class="task-check' + (isDone ? ' done' : '') + '" onclick="toggleTask(' + t.id + ')">' + (isDone ? '✓' : '') + '</div>' +
                         '<div class="task-info"><div class="task-title' + (isDone ? ' done' : '') + '">' + t.title + (t.archived ? ' <span style="opacity:0.4;font-size:11px">(archived)</span>' : '') + '</div>' + (mapStr ? '<div class="task-map">' + mapStr + '</div>' : '') + noteStr + '</div>' +
-                        '<div class="task-actions">' + archBtn + '<button class="edit-btn" onclick="editTask(' + t.id + ')" title="Edit">✎</button><button class="delete-btn" onclick="deleteTask(' + t.id + ')">✕</button></div></div>';
+                        '<div class="task-actions">' + archBtn + dlBtn + '<button class="edit-btn" onclick="editTask(' + t.id + ')" title="Edit">✎</button><button class="delete-btn" onclick="deleteTask(' + t.id + ')">✕</button></div></div>';
                 }).join('');
             }
             if (oneTime.length) {
@@ -2183,7 +2234,7 @@
                         if (t.cat) mapStr += badgeLabel(t.cat);
                         if (t.sub) mapStr += ' · ' + t.sub;
                         if (t.cat && t.blocks) mapStr += (mapStr ? ' · ' : '') + fmtBlocks(t.blocks);
-                        var noteStr = t.notes ? '<div class="task-map" style="font-style:italic">“' + t.notes + '”</div>' : '';
+                        var noteStr = formatNotesSnippet(t.notes, 'task-map');
                         return '<div class="task-item">' +
                             '<div class="task-check" onclick="toggleTask(' + t.id + ')"></div>' +
                             '<div class="task-info"><div class="task-title">' + t.title + '</div>' + (mapStr ? '<div class="task-map">' + mapStr + '</div>' : '') + noteStr + '</div>' +
@@ -2197,11 +2248,14 @@
                         if (t.cat) mapStr += badgeLabel(t.cat);
                         if (t.sub) mapStr += ' · ' + t.sub;
                         if (t.cat && t.blocks) mapStr += (mapStr ? ' · ' : '') + fmtBlocks(t.blocks);
-                        var noteStr = t.notes ? '<div class="task-map" style="font-style:italic">“' + t.notes + '”</div>' : '';
+                        var noteStr = formatNotesSnippet(t.notes, 'task-map');
+                        var safeTitle = encodeURIComponent(t.title || 'task');
+                        var safeNotes = encodeURIComponent(t.notes || '');
+                        var dlBtn = t.notes ? '<button class="edit-btn" title="Download Notes" onclick="downloadNotesText(decodeURIComponent(\'' + safeTitle + '\'), decodeURIComponent(\'' + safeNotes + '\')); event.stopPropagation();">⬇</button>' : '';
                         return '<div class="task-item">' +
                             '<div class="task-check done" onclick="toggleTask(' + t.id + ')">✓</div>' +
                             '<div class="task-info"><div class="task-title done">' + t.title + '</div>' + (mapStr ? '<div class="task-map">' + mapStr + '</div>' : '') + noteStr + '</div>' +
-                            '<div class="task-actions"><button class="edit-btn" onclick="editTask(' + t.id + ')" title="Edit">✎</button><button class="delete-btn" onclick="deleteTask(' + t.id + ')">✕</button></div></div>';
+                            '<div class="task-actions">' + dlBtn + '<button class="edit-btn" onclick="editTask(' + t.id + ')" title="Edit">✎</button><button class="delete-btn" onclick="deleteTask(' + t.id + ')">✕</button></div></div>';
                     }).join('');
                 }
             }
