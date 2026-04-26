@@ -1461,7 +1461,7 @@
         }
 
         function changeBlocks(d) {
-            blocks = Math.max(1, Math.min(16, blocks + d));
+            blocks = Math.max(0, Math.min(16, blocks + d));
             document.getElementById('block-val').textContent = blocks;
             document.getElementById('block-label').textContent = '= ' + fmtBlocks(blocks);
         }
@@ -1532,7 +1532,7 @@
         function saveTimerSession() {
             var cat = document.getElementById('t-cat').value;
             var sub = document.getElementById('t-sub').value;
-            var b = Math.max(1, Math.round(timerElapsed / 1800));
+            var b = Math.max(0, Math.round(timerElapsed / 1800));
             sessions.unshift({ id: Date.now(), cat: cat, sub: sub, notes: document.getElementById('t-notes').value.trim(), blocks: b, date: new Date().toISOString().slice(0, 10), ts: Date.now() });
             save(); markStateUpdated(); resetTimer(); showToast(); syncNow(true);
         }
@@ -1616,14 +1616,14 @@
             var dates = Object.keys(grouped).sort().reverse();
             el.innerHTML = dates.map(function (d) {
                 var pretty = new Date(d + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
-                var totalBlocks = grouped[d].reduce(function (a, s) { return a + (s.blocks || 1); }, 0);
+                var totalBlocks = grouped[d].reduce(function (a, s) { return a + (s.blocks !== undefined ? s.blocks : 1); }, 0);
                 var items = grouped[d].map(function (s) {
                     var sub = s.sub ? (' · ' + s.sub) : '';
                     var noteStr = formatNotesSnippet(s.notes, 's-notes');
                     var safeTitle = encodeURIComponent('session_' + (s.cat||''));
                     var safeNotes = encodeURIComponent(s.notes || '');
                     var dlBtn = s.notes ? '<button class="edit-btn" title="Download Notes" onclick="downloadNotesText(decodeURIComponent(\'' + safeTitle + '\'), decodeURIComponent(\'' + safeNotes + '\')); event.stopPropagation();">⬇</button>' : '';
-                    return '<div class="session-item"><div class="card-title" style="margin-bottom:0;align-items:flex-start;"><div><div class="s-meta"><span class="badge" style="' + badgeStyle(s.cat) + '">' + badgeLabel(s.cat) + '</span><span class="muted">' + sub + '</span><span>' + fmtBlocks(s.blocks || 1) + '</span></div>' + noteStr + '</div><div style="display:flex;gap:2px;align-items:center">' + dlBtn + '<button class="delete-btn" onclick="deleteSession(' + s.id + ')">✕</button></div></div></div>';
+                    return '<div class="session-item"><div class="card-title" style="margin-bottom:0;align-items:flex-start;"><div><div class="s-meta"><span class="badge" style="' + badgeStyle(s.cat) + '">' + badgeLabel(s.cat) + '</span><span class="muted">' + sub + '</span><span>' + fmtBlocks(s.blocks !== undefined ? s.blocks : 1) + '</span></div>' + noteStr + '</div><div style="display:flex;gap:2px;align-items:center">' + dlBtn + '<button class="delete-btn" onclick="deleteSession(' + s.id + ')">✕</button></div></div></div>';
                 }).join('');
                 return '<div class="card"><div class="history-day-head"><span class="section-head" style="margin:0">' + pretty + '</span><span class="muted">' + fmtBlocks(totalBlocks) + ' total</span></div>' + items + '</div>';
             }).join('');
@@ -1632,8 +1632,8 @@
         function renderStats() {
             var cats = {}; var catB = {};
             categoryOrder.forEach(function (c) { cats[c] = 0; catB[c] = 0; });
-            var totalBlocks = sessions.reduce(function (a, s) { return a + (s.blocks || 1); }, 0);
-            sessions.forEach(function (s) { if (cats[s.cat] !== undefined) { cats[s.cat]++; catB[s.cat] += (s.blocks || 1); } });
+            var totalBlocks = sessions.reduce(function (a, s) { return a + (s.blocks !== undefined ? s.blocks : 1); }, 0);
+            sessions.forEach(function (s) { if (cats[s.cat] !== undefined) { cats[s.cat]++; catB[s.cat] += (s.blocks !== undefined ? s.blocks : 1); } });
             var bd = document.getElementById('cat-breakdown');
             bd.innerHTML = categoryOrder.map(function (k) {
                 var pct = totalBlocks ? Math.round(catB[k] / totalBlocks * 100) : 0;
@@ -2060,7 +2060,7 @@
         }
         var taskBlocks = 1;
         function changeTaskBlocks(d) {
-            taskBlocks = Math.max(1, Math.min(16, taskBlocks + d));
+            taskBlocks = Math.max(0, Math.min(16, taskBlocks + d));
             document.getElementById('tk-block-val').textContent = taskBlocks;
             document.getElementById('tk-block-label').textContent = '= ' + fmtBlocks(taskBlocks);
         }
@@ -2137,7 +2137,7 @@
                         var idx = t.completedDates.indexOf(today);
                         if (idx === -1) {
                             t.completedDates.push(today);
-                            if (t.cat && t.blocks) {
+                            if (t.cat && t.blocks !== undefined) {
                                 sessions.unshift({ id: Date.now(), cat: t.cat, sub: t.sub || '', notes: t.notes || t.title, blocks: t.blocks, date: today, ts: Date.now() });
                                 save();
                             }
@@ -2147,7 +2147,7 @@
                     } else {
                         t.completed = !t.completed;
                         t.completedAt = t.completed ? Date.now() : 0;
-                        if (t.completed && t.cat && t.blocks) {
+                        if (t.completed && t.cat && t.blocks !== undefined) {
                             sessions.unshift({ id: Date.now(), cat: t.cat, sub: t.sub || '', notes: t.notes || t.title, blocks: t.blocks, date: today, ts: Date.now() });
                             save();
                         }
@@ -2210,7 +2210,7 @@
                     var mapStr = '';
                     if (t.cat) mapStr += badgeLabel(t.cat);
                     if (t.sub) mapStr += ' · ' + t.sub;
-                    if (t.cat && t.blocks) mapStr += (mapStr ? ' · ' : '') + fmtBlocks(t.blocks);
+                    if (t.cat && t.blocks !== undefined) mapStr += (mapStr ? ' · ' : '') + fmtBlocks(t.blocks);
                     var noteStr = formatNotesSnippet(t.notes, 'task-map');
                     var safeTitle = encodeURIComponent(t.title || 'task');
                     var safeNotes = encodeURIComponent(t.notes || '');
@@ -2233,7 +2233,7 @@
                         var mapStr = '';
                         if (t.cat) mapStr += badgeLabel(t.cat);
                         if (t.sub) mapStr += ' · ' + t.sub;
-                        if (t.cat && t.blocks) mapStr += (mapStr ? ' · ' : '') + fmtBlocks(t.blocks);
+                        if (t.cat && t.blocks !== undefined) mapStr += (mapStr ? ' · ' : '') + fmtBlocks(t.blocks);
                         var noteStr = formatNotesSnippet(t.notes, 'task-map');
                         return '<div class="task-item">' +
                             '<div class="task-check" onclick="toggleTask(' + t.id + ')"></div>' +
@@ -2247,7 +2247,7 @@
                         var mapStr = '';
                         if (t.cat) mapStr += badgeLabel(t.cat);
                         if (t.sub) mapStr += ' · ' + t.sub;
-                        if (t.cat && t.blocks) mapStr += (mapStr ? ' · ' : '') + fmtBlocks(t.blocks);
+                        if (t.cat && t.blocks !== undefined) mapStr += (mapStr ? ' · ' : '') + fmtBlocks(t.blocks);
                         var noteStr = formatNotesSnippet(t.notes, 'task-map');
                         var safeTitle = encodeURIComponent(t.title || 'task');
                         var safeNotes = encodeURIComponent(t.notes || '');
