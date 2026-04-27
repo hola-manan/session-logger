@@ -3,7 +3,6 @@
 
 <head>
     <meta charset="UTF-8">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#090612">
     <title>Session Logger</title>
@@ -1289,18 +1288,6 @@
 
         <div id="tab-manage" style="display:none">
             <div class="card">
-                <div class="section-head">Sync Encryption</div>
-                <label>Encryption Key <span style="font-weight:400;opacity:0.6">(Required to sync securely)</span></label>
-                <div style="display:flex;gap:8px">
-                    <input type="password" id="sync-key-input" placeholder="Enter encryption key..." style="margin-bottom:0">
-                    <button class="btn-sm" onclick="saveSyncKey()">Save</button>
-                </div>
-                <div style="font-size:12px;color:var(--ui-text-soft);margin-top:8px">
-                    If set, data will be encrypted before sending to the database. Make sure to use the same key across your devices.
-                </div>
-            </div>
-
-            <div class="card">
                 <div class="section-head">Manage categories & sub-lists</div>
                 <div id="manage-lists"></div>
                 <div class="add-cat-row">
@@ -1331,7 +1318,6 @@
         var nextHueIdx = 0;
         var FIREBASE_DB_URL = 'https://work-tracker-10960-default-rtdb.asia-southeast1.firebasedatabase.app';
         var FIREBASE_SYNC_ID = 'personal-main';
-        var syncKey = '';
 
         function load() {
             try { var s = localStorage.getItem('sesh_v2'); if (s) sessions = JSON.parse(s); } catch (e) { sessions = []; }
@@ -1340,49 +1326,9 @@
             try { var co = localStorage.getItem('sesh_cats'); if (co) { var parsed = JSON.parse(co); if (Array.isArray(parsed)) categoryOrder = parsed; } } catch (e) { }
             try { var cm = localStorage.getItem('sesh_catmeta'); if (cm) { var pm = JSON.parse(cm); if (pm && typeof pm === 'object') { for (var k in pm) categoryMeta[k] = pm[k]; } } } catch (e) { }
             try { var tk = localStorage.getItem('sesh_tasks'); if (tk) { var pt = JSON.parse(tk); if (Array.isArray(pt)) tasks = pt; } } catch (e) { }
-            try { syncKey = localStorage.getItem('sesh_sync_key') || ''; } catch (e) { }
-            if (document.getElementById('sync-key-input')) document.getElementById('sync-key-input').value = syncKey;
             categoryOrder.forEach(function (c) { if (!sublists[c]) sublists[c] = []; });
         }
 
-        function saveSyncKey() {
-            syncKey = document.getElementById('sync-key-input').value;
-            try { localStorage.setItem('sesh_sync_key', syncKey); } catch (e) { }
-            syncNow(false);
-            document.getElementById('toast-emoji').textContent = '🔒';
-            document.getElementById('toast-msg').textContent = 'Key saved!';
-            document.getElementById('toast-sub').textContent = 'Encryption key updated.';
-            document.getElementById('toast-overlay').classList.add('show');
-            setTimeout(dismissToast, 3000);
-        }
-
-        function encryptPayload(payload) {
-            var str = JSON.stringify(payload);
-            if (!syncKey) return payload;
-            try {
-                return { encryptedData: CryptoJS.AES.encrypt(str, syncKey).toString(), updatedAt: payload.updatedAt };
-            } catch(e) {
-                console.warn("Encryption failed", e);
-                return payload;
-            }
-        }
-
-        function decryptPayload(remote) {
-            if (!remote) return null;
-            if (remote.encryptedData) {
-                if (!syncKey) return null;
-                try {
-                    var bytes = CryptoJS.AES.decrypt(remote.encryptedData, syncKey);
-                    var decryptedStr = bytes.toString(CryptoJS.enc.Utf8);
-                    if (!decryptedStr) return null;
-                    return JSON.parse(decryptedStr);
-                } catch(e) {
-                    console.warn("Decryption failed", e);
-                    return null;
-                }
-            }
-            return remote;
-        }
         function save() { try { localStorage.setItem('sesh_v2', JSON.stringify(sessions)); } catch (e) { } }
         function saveSub() { try { localStorage.setItem('sesh_sub', JSON.stringify(sublists)); } catch (e) { } }
         function saveCats() { try { localStorage.setItem('sesh_cats', JSON.stringify(categoryOrder)); localStorage.setItem('sesh_catmeta', JSON.stringify(categoryMeta)); } catch (e) { } }
@@ -1562,7 +1508,7 @@
             sessions = sessions.filter(function (s) { return s.id !== id; }); save(); markStateUpdated(); renderHistory(); syncNow(true);
         }
 
-        window.toggleNotes = function(el) {
+        window.toggleNotes = function (el) {
             var isExpanded = el.getAttribute('data-expanded') === 'true';
             var full = decodeURIComponent(el.getAttribute('data-full'));
             var short = decodeURIComponent(el.getAttribute('data-short'));
@@ -1581,26 +1527,26 @@
             div.textContent = notesText;
             var escapedNotes = div.innerHTML.replace(/\n/g, '<br>');
             var cls = customClass || 's-notes';
-            
+
             if (notesText.length <= 60) {
                 return '<div class="' + cls + '" style="margin-top:4px;font-style:italic;word-break:break-word;">“' + escapedNotes + '”</div>';
             }
-            
+
             var shortText = notesText.substring(0, 60).trim() + '...';
             div.textContent = shortText;
             var escapedShort = div.innerHTML;
-            
+
             var safeFull = encodeURIComponent(escapedNotes);
             var safeShort = encodeURIComponent(escapedShort);
-            
+
             var spanHtml = '<span data-expanded="false" data-full="' + safeFull + '" data-short="' + safeShort + '">“' + escapedShort + '” <a href="#" onclick="event.preventDefault(); window.toggleNotes(this.parentElement); event.stopPropagation();" style="color:var(--ui-accent);text-decoration:none;white-space:nowrap;">read more</a></span>';
-            
+
             return '<div class="' + cls + '" style="margin-top:4px;font-style:italic;word-break:break-word;">' + spanHtml + '</div>';
         }
 
         function downloadNotesText(title, notesText) {
             var el = document.createElement('a');
-            var file = new Blob([notesText], {type: 'text/plain'});
+            var file = new Blob([notesText], { type: 'text/plain' });
             el.href = URL.createObjectURL(file);
             el.download = (title || 'notes').replace(/[^a-z0-9]/gi, '_').toLowerCase() + '.txt';
             el.click();
@@ -1620,7 +1566,7 @@
                 var items = grouped[d].map(function (s) {
                     var sub = s.sub ? (' · ' + s.sub) : '';
                     var noteStr = formatNotesSnippet(s.notes, 's-notes');
-                    var safeTitle = encodeURIComponent('session_' + (s.cat||''));
+                    var safeTitle = encodeURIComponent('session_' + (s.cat || ''));
                     var safeNotes = encodeURIComponent(s.notes || '');
                     var dlBtn = s.notes ? '<button class="edit-btn" title="Download Notes" onclick="downloadNotesText(decodeURIComponent(\'' + safeTitle + '\'), decodeURIComponent(\'' + safeNotes + '\')); event.stopPropagation();">⬇</button>' : '';
                     return '<div class="session-item"><div class="card-title" style="margin-bottom:0;align-items:flex-start;"><div><div class="s-meta"><span class="badge" style="' + badgeStyle(s.cat) + '">' + badgeLabel(s.cat) + '</span><span class="muted">' + sub + '</span><span>' + fmtBlocks(s.blocks !== undefined ? s.blocks : 1) + '</span></div>' + noteStr + '</div><div style="display:flex;gap:2px;align-items:center">' + dlBtn + '<button class="delete-btn" onclick="deleteSession(' + s.id + ')">✕</button></div></div></div>';
@@ -1726,7 +1672,7 @@
                 if (graphCats.length === 1 && graphSub && s.sub !== graphSub) return false;
                 return true;
             });
-            var totalHours = (filtered.reduce(function(acc, s) { return acc + (s.blocks || 1); }, 0) * 0.5).toFixed(1);
+            var totalHours = (filtered.reduce(function (acc, s) { return acc + (s.blocks || 1); }, 0) * 0.5).toFixed(1);
             document.getElementById('graph-total').textContent = totalHours + ' hours';
             if (!filtered.length) {
                 ctx.fillStyle = '#b8abd8'; ctx.font = '14px Inter,sans-serif'; ctx.textAlign = 'center';
@@ -1943,12 +1889,7 @@
             var hasLocalData = sessions.length > 0 || Object.keys(sublists).some(function (k) { return (sublists[k] || []).length > 0; });
             fetch(url)
                 .then(function (res) { if (!res.ok) throw new Error('fetch failed'); return res.json(); })
-                .then(function (rawRemote) {
-                    var remote = decryptPayload(rawRemote);
-                    if (rawRemote && rawRemote.encryptedData && !remote) {
-                        if (!silent) alert('Could not decrypt remote data. Check your encryption key.');
-                        return;
-                    }
+                .then(function (remote) {
                     var remoteHasState = !!remote && typeof remote === 'object' && Array.isArray(remote.sessions) && remote.sublists && typeof remote.sublists === 'object';
                     var remoteTs = remote && remote.updatedAt ? Number(remote.updatedAt) : 0;
                     var localTs = stateUpdatedAt || 0;
@@ -1971,8 +1912,7 @@
                     }
                     var nextTs = localTs || Date.now();
                     var payload = { sessions: sessions, tasks: tasks, sublists: sublists, categoryOrder: categoryOrder, categoryMeta: categoryMeta, updatedAt: nextTs };
-                    var dataToPush = encryptPayload(payload);
-                    return fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dataToPush) }).then(function (res2) {
+                    return fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(function (res2) {
                         if (!res2.ok) throw new Error('push failed');
                         if (!localTs) {
                             stateUpdatedAt = nextTs;
