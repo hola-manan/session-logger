@@ -1886,17 +1886,17 @@
         function syncNow(silent) {
             var url = makeFirebasePath();
             if (!url) { return; }
-            var hasLocalData = sessions.length > 0 || Object.keys(sublists).some(function (k) { return (sublists[k] || []).length > 0; });
-            fetch(url)
+            var hasLocalData = sessions.length > 0 || Object.keys(sublists).some(function (k) { return (sublists[k] || []).length > 0; }) || tasks.length > 0;
+            fetch(url, { cache: 'no-store' })
                 .then(function (res) { if (!res.ok) throw new Error('fetch failed'); return res.json(); })
                 .then(function (remote) {
-                    var remoteHasState = !!remote && typeof remote === 'object' && Array.isArray(remote.sessions) && remote.sublists && typeof remote.sublists === 'object';
-                    var remoteTs = remote && remote.updatedAt ? Number(remote.updatedAt) : 0;
+                    var remoteHasState = !!remote && typeof remote === 'object' && !!remote.updatedAt;
+                    var remoteTs = remoteHasState ? Number(remote.updatedAt) : 0;
                     var localTs = stateUpdatedAt || 0;
                     var shouldPull = remoteHasState && (remoteTs > localTs || (localTs === 0 && !hasLocalData));
                     if (shouldPull) {
-                        sessions = remote.sessions;
-                        if (Array.isArray(remote.tasks)) tasks = remote.tasks;
+                        sessions = Array.isArray(remote.sessions) ? remote.sessions : [];
+                        tasks = Array.isArray(remote.tasks) ? remote.tasks : [];
                         if (remote.sublists && typeof remote.sublists === 'object') {
                             sublists = {};
                             Object.keys(remote.sublists).forEach(function (k) { sublists[k] = Array.isArray(remote.sublists[k]) ? remote.sublists[k] : []; });
@@ -1910,6 +1910,10 @@
                         if (!silent) setSyncStatus('Synced: pulled newer data from cloud.');
                         return;
                     }
+                    
+                    var shouldPush = (localTs > remoteTs) || (!remoteHasState && hasLocalData);
+                    if (!shouldPush) return;
+                    
                     var nextTs = localTs || Date.now();
                     var payload = { sessions: sessions, tasks: tasks, sublists: sublists, categoryOrder: categoryOrder, categoryMeta: categoryMeta, updatedAt: nextTs };
                     return fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(function (res2) {
