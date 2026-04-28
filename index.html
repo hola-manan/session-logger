@@ -1303,6 +1303,7 @@
     <script>
         var sessions = [];
         var tasks = [];
+        var deletedIds = [];
         var sublists = { learning: [], project: [], fitness: [] };
         var timerInterval = null, timerStart = null, timerElapsed = 0, timerRunning = false;
         var blocks = 1;
@@ -1326,6 +1327,7 @@
             try { var co = localStorage.getItem('sesh_cats'); if (co) { var parsed = JSON.parse(co); if (Array.isArray(parsed)) categoryOrder = parsed; } } catch (e) { }
             try { var cm = localStorage.getItem('sesh_catmeta'); if (cm) { var pm = JSON.parse(cm); if (pm && typeof pm === 'object') { for (var k in pm) categoryMeta[k] = pm[k]; } } } catch (e) { }
             try { var tk = localStorage.getItem('sesh_tasks'); if (tk) { var pt = JSON.parse(tk); if (Array.isArray(pt)) tasks = pt; } } catch (e) { }
+            try { var di = localStorage.getItem('sesh_deleted'); if (di) { var pdi = JSON.parse(di); if (Array.isArray(pdi)) deletedIds = pdi; } } catch (e) { }
             categoryOrder.forEach(function (c) { if (!sublists[c]) sublists[c] = []; });
         }
 
@@ -1333,6 +1335,7 @@
         function saveSub() { try { localStorage.setItem('sesh_sub', JSON.stringify(sublists)); } catch (e) { } }
         function saveCats() { try { localStorage.setItem('sesh_cats', JSON.stringify(categoryOrder)); localStorage.setItem('sesh_catmeta', JSON.stringify(categoryMeta)); } catch (e) { } }
         function saveTasks() { try { localStorage.setItem('sesh_tasks', JSON.stringify(tasks)); } catch (e) { } }
+        function saveDeleted() { try { localStorage.setItem('sesh_deleted', JSON.stringify(deletedIds)); } catch (e) { } }
         function markStateUpdated() { stateUpdatedAt = Date.now(); try { localStorage.setItem(STATE_TS_KEY, String(stateUpdatedAt)); } catch (e) { } }
         function makeFirebasePath() {
             var dbUrl = FIREBASE_DB_URL.trim().replace(/\/+$/, '');
@@ -1505,7 +1508,9 @@
             showToast(); syncNow(true);
         }
         function deleteSession(id) {
-            sessions = sessions.filter(function (s) { return s.id !== id; }); save(); markStateUpdated(); renderHistory(); syncNow(true);
+            sessions = sessions.filter(function (s) { return s.id !== id; });
+            if (deletedIds.indexOf(id) === -1) deletedIds.push(id);
+            save(); saveDeleted(); markStateUpdated(); renderHistory(); syncNow(true);
         }
 
         window.toggleNotes = function (el) {
@@ -1893,36 +1898,94 @@
                     var remoteHasState = !!remote && typeof remote === 'object' && !!remote.updatedAt;
                     var remoteTs = remoteHasState ? Number(remote.updatedAt) : 0;
                     var localTs = stateUpdatedAt || 0;
-                    var shouldPull = remoteHasState && (remoteTs > localTs || (localTs === 0 && !hasLocalData));
-                    if (shouldPull) {
-                        sessions = Array.isArray(remote.sessions) ? remote.sessions : [];
-                        tasks = Array.isArray(remote.tasks) ? remote.tasks : [];
-                        if (remote.sublists && typeof remote.sublists === 'object') {
-                            sublists = {};
-                            Object.keys(remote.sublists).forEach(function (k) { sublists[k] = Array.isArray(remote.sublists[k]) ? remote.sublists[k] : []; });
-                        }
-                        if (Array.isArray(remote.categoryOrder)) categoryOrder = remote.categoryOrder;
-                        if (remote.categoryMeta && typeof remote.categoryMeta === 'object') categoryMeta = remote.categoryMeta;
-                        categoryOrder.forEach(function (c) { if (!sublists[c]) sublists[c] = []; });
-                        stateUpdatedAt = remoteTs || localTs || 0;
-                        save(); saveSub(); saveCats(); saveTasks(); try { localStorage.setItem(STATE_TS_KEY, String(stateUpdatedAt)); } catch (e) { }
-                        renderHistory(); renderStats(); renderManage(); renderTasks(); renderCategoryButtons('m'); renderCategoryButtons('t'); renderSubButtons('m'); renderSubButtons('t');
-                        if (!silent) setSyncStatus('Synced: pulled newer data from cloud.');
-                        return;
-                    }
                     
-                    var shouldPush = (localTs > remoteTs) || (!remoteHasState && hasLocalData);
-                    if (!shouldPush) return;
-                    
-                    var nextTs = localTs || Date.now();
-                    var payload = { sessions: sessions, tasks: tasks, sublists: sublists, categoryOrder: categoryOrder, categoryMeta: categoryMeta, updatedAt: nextTs };
-                    return fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(function (res2) {
-                        if (!res2.ok) throw new Error('push failed');
-                        if (!localTs) {
-                            stateUpdatedAt = nextTs;
-                            try { localStorage.setItem(STATE_TS_KEY, String(stateUpdatedAt)); } catch (e) { }
+                    if (!remoteHasState && !hasLocalData) return;
+
+                    var rSessions = Array.isArray(remote.sessions) ? remote.sessions : [];
+                    var rTasks = Array.isArray(remote.tasks) ? remote.tasks : [];
+                    var rDeletedIds = Array.isArray(remote.deletedIds) ? remote.deletedIds : [];
+                    var rSublists = (remote.sublists && typeof remote.sublists === 'object') ? remote.sublists : {};
+                    var rCatOrder = Array.isArray(remote.categoryOrder) ? remote.categoryOrder : [];
+                    var rCatMeta = (remote.categoryMeta && typeof remote.categoryMeta === 'object') ? remote.categoryMeta : {};
+
+                    // Merge deletedIds
+                    var mergedDeletedIds = deletedIds.slice();
+                    rDeletedIds.forEach(function(id) { if (mergedDeletedIds.indexOf(id) === -1) mergedDeletedIds.push(id); });
+
+                    // Merge Logic: Union of local and remote data to prevent data loss
+                    var sessionMap = {};
+                    rSessions.forEach(function (s) { if (mergedDeletedIds.indexOf(s.id) === -1) sessionMap[s.id] = s; });
+                    sessions.forEach(function (s) { if (mergedDeletedIds.indexOf(s.id) === -1) sessionMap[s.id] = s; });
+                    var mergedSessions = Object.keys(sessionMap).map(function(k){return sessionMap[k];}).sort(function (a, b) { return b.id - a.id; });
+
+                    var taskMap = {};
+                    rTasks.forEach(function (t) { if (mergedDeletedIds.indexOf(t.id) === -1) taskMap[t.id] = JSON.parse(JSON.stringify(t)); });
+                    tasks.forEach(function (lt) {
+                        if (mergedDeletedIds.indexOf(lt.id) !== -1) return;
+                        if (!taskMap[lt.id]) {
+                            taskMap[lt.id] = lt;
+                        } else {
+                            var rt = taskMap[lt.id];
+                            if (lt.completedDates || rt.completedDates) {
+                                var dates = {};
+                                if (rt.completedDates) rt.completedDates.forEach(function (d) { dates[d] = 1; });
+                                if (lt.completedDates) lt.completedDates.forEach(function (d) { dates[d] = 1; });
+                                rt.completedDates = Object.keys(dates).sort();
+                            }
+                            if (lt.completed && !rt.completed) {
+                                rt.completed = true;
+                                rt.completedAt = lt.completedAt || rt.completedAt;
+                            }
+                            if (lt.archived || rt.archived) rt.archived = true;
+                            if (lt.title && !rt.title) rt.title = lt.title;
                         }
                     });
+                    var mergedTasks = Object.keys(taskMap).map(function(k){return taskMap[k];});
+
+                    var mergedCatOrder = rCatOrder.slice();
+                    categoryOrder.forEach(function (c) { if (mergedCatOrder.indexOf(c) === -1) mergedCatOrder.push(c); });
+
+                    var mergedCatMeta = Object.assign({}, rCatMeta);
+                    Object.keys(categoryMeta).forEach(function (k) { if (!mergedCatMeta[k]) mergedCatMeta[k] = categoryMeta[k]; });
+
+                    var mergedSublists = JSON.parse(JSON.stringify(rSublists));
+                    Object.keys(sublists).forEach(function (k) {
+                        if (!mergedSublists[k]) mergedSublists[k] = [];
+                        sublists[k].forEach(function (sub) {
+                            if (mergedSublists[k].indexOf(sub) === -1) mergedSublists[k].push(sub);
+                        });
+                    });
+
+                    // Check if local data needs updating
+                    var localNeedsUpdate = (mergedSessions.length !== sessions.length) || (mergedTasks.length !== tasks.length) || (mergedDeletedIds.length !== deletedIds.length) || remoteTs > localTs;
+                    
+                    if (localNeedsUpdate) {
+                        sessions = mergedSessions;
+                        tasks = mergedTasks;
+                        deletedIds = mergedDeletedIds;
+                        sublists = mergedSublists;
+                        categoryOrder = mergedCatOrder;
+                        categoryMeta = mergedCatMeta;
+                        categoryOrder.forEach(function (c) { if (!sublists[c]) sublists[c] = []; });
+                        
+                        stateUpdatedAt = Math.max(localTs, remoteTs);
+                        save(); saveSub(); saveCats(); saveTasks(); saveDeleted(); try { localStorage.setItem(STATE_TS_KEY, String(stateUpdatedAt)); } catch (e) { }
+                        renderHistory(); renderStats(); renderManage(); renderTasks(); renderCategoryButtons('m'); renderCategoryButtons('t'); renderSubButtons('m'); renderSubButtons('t');
+                        if (!silent) setSyncStatus('Synced: merged data from cloud.');
+                    }
+
+                    // Check if remote data needs updating
+                    var remoteNeedsUpdate = (mergedSessions.length !== rSessions.length) || (mergedTasks.length !== rTasks.length) || (mergedDeletedIds.length !== rDeletedIds.length) || localTs > remoteTs;
+                    
+                    if (remoteNeedsUpdate) {
+                        var nextTs = Math.max(localTs, remoteTs, Date.now());
+                        var payload = { sessions: mergedSessions, tasks: mergedTasks, deletedIds: mergedDeletedIds, sublists: mergedSublists, categoryOrder: mergedCatOrder, categoryMeta: mergedCatMeta, updatedAt: nextTs };
+                        return fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(function (res2) {
+                            if (!res2.ok) throw new Error('push failed');
+                            stateUpdatedAt = nextTs;
+                            try { localStorage.setItem(STATE_TS_KEY, String(stateUpdatedAt)); } catch (e) { }
+                        });
+                    }
                 })
                 .catch(function (err) { if (window && window.console && console.warn) console.warn('Background sync skipped', err); });
         }
@@ -2102,7 +2165,8 @@
         }
         function deleteTask(id) {
             tasks = tasks.filter(function (t) { return t.id !== id; });
-            saveTasks(); markStateUpdated(); renderTasks(); syncNow(true);
+            if (deletedIds.indexOf(id) === -1) deletedIds.push(id);
+            saveTasks(); saveDeleted(); markStateUpdated(); renderTasks(); syncNow(true);
         }
         function archiveTask(id) {
             tasks.forEach(function (t) { if (t.id === id) t.archived = true; });
